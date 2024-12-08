@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
-from currency_converter import CurrencyConverter
+import requests
 from PIL import Image
 
 # Define the path for the blank icon
@@ -8,18 +8,41 @@ icon_path = 'C:\\Users\\Frank\\Desktop\\blank.ico'
 
 # Create a function to generate a blank icon
 def create_blank_ico(path):
-  size = (16, 16)
-  image = Image.new("RGBA", size, (255, 255, 255, 0))
-  image.save(path, format="ICO")
+    size = (16, 16)
+    image = Image.new("RGBA", size, (255, 255, 255, 0))
+    image.save(path, format="ICO")
 
 # Create the blank ICO file
 create_blank_ico(icon_path)
 
-# Create the CurrencyConverter object
-c = CurrencyConverter()
+# API Configuration
+API_KEY = 'API Key Here'  # Replace with your actual Fixer.io API key
+BASE_URL = 'http://data.fixer.io/api'
+
+# Function to get exchange rates
+def get_exchange_rates():
+    url = f'{BASE_URL}/latest?access_key={API_KEY}'
+    response = requests.get(url)
+    data = response.json()
+    if data['success']:
+        rates = data['rates']
+        # Ensure EUR is included in the rates
+        if 'EUR' not in rates:
+            rates['EUR'] = 1.0
+        return rates, data['date']
+    else:
+        raise Exception('Error fetching exchange rates.')
+
+# Fetch exchange rates at the start
+try:
+    exchange_rates, last_updated = get_exchange_rates()
+except Exception as e:
+    print("Error fetching exchange rates:", e)
+    exchange_rates = None
+    last_updated = 'Unknown'
 
 # Limit the currencies to EUR, GBP, USD, AUD, JPY, and ZAR
-available_currencies = ['EUR', 'GBP', 'USD', 'AUD', 'JPY', 'ZAR']
+available_currencies = ['EUR', 'GBP', 'USD', 'AUD', 'JPY', 'ZAR', 'CNY']
 
 def convert_currency():
     try:
@@ -27,39 +50,41 @@ def convert_currency():
         from_currency = from_currency_combobox.get()
         to_currency = to_currency_combobox.get()
 
-        # Perform the conversion
-        converted_amount = c.convert(amount, from_currency, to_currency)
-        
-        # Get the cross rate (from -> to)
-        cross_rate = c.convert(1, from_currency, to_currency)
-        
-        # Get the reverse cross rate (to -> from)
-        reverse_cross_rate = c.convert(1, to_currency, from_currency)
-        
+        if exchange_rates is None:
+            raise Exception('Exchange rates data is not available.')
+
+        if from_currency not in exchange_rates:
+            raise Exception(f"Currency {from_currency} not available.")
+        if to_currency not in exchange_rates:
+            raise Exception(f"Currency {to_currency} not available.")
+
+        rate_from = exchange_rates[from_currency]
+        rate_to = exchange_rates[to_currency]
+
+        rate = rate_to / rate_from
+        converted_amount = amount * rate
+
+        # Cross rate is rate
+        cross_rate = rate
+
+        # Reverse cross rate is 1 / rate
+        reverse_cross_rate = 1 / rate
+
         # Display the result and both cross rates
         result_label.config(text=f"{amount} {from_currency} is equal to {converted_amount:.2f} {to_currency}")
         cross_rate_label.config(text=f"Cross Rate: 1 {from_currency} = {cross_rate:.4f} {to_currency} \n"
                                      f"Reverse Rate: 1 {to_currency} = {reverse_cross_rate:.4f} {from_currency}")
-        
-        # Call the show_last_updated function to display the update info
-        show_last_updated()
+
+        # Update the last updated label
+        last_updated_label.config(text=f"Rates last updated on: {last_updated}")
     except Exception as e:
         result_label.config(text="Error in conversion. Please check inputs.")
         cross_rate_label.config(text="")
-
-def show_last_updated():
-    try:
-        # Get the last available date from the CurrencyConverter's data
-        last_updated = max(c._rates['USD'].keys())  # or any other available currency like 'EUR'
-        
-        # Display the last updated date in a label
-        last_updated_label.config(text=f"Rates last updated on: {last_updated}")
-    except Exception as e:
-        last_updated_label.config(text="Cannot retrieve update date.")
+        last_updated_label.config(text="")
 
 # Create the main window
 root = tk.Tk()
-root.title("Currency Convert")
+root.title("Currency Conv")
 
 # Set custom icon
 root.iconbitmap(icon_path)
@@ -96,7 +121,7 @@ result_label.grid(row=4, column=0, columnspan=2, padx=10, pady=10)
 cross_rate_label = tk.Label(root, text="")
 cross_rate_label.grid(row=5, column=0, columnspan=2, padx=10, pady=10)
 
-# Label to display the last updated date (this will be updated when the Convert button is pressed)
+# Label to display the last updated date
 last_updated_label = tk.Label(root, text="")
 last_updated_label.grid(row=6, column=0, columnspan=2, padx=10, pady=10)
 
